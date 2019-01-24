@@ -1,312 +1,96 @@
-println '***************导入配置项**************'
-
-import org.codehaus.groovy.runtime.StackTraceUtils
-
-int[] sdksAvailable() {
-    def sdks = new ByteArrayOutputStream()
-    def androidSdkDir = androidSDKDir()
-    if (System.getProperty('os.name').contains("Mac")) {
-        exec {
-            workingDir androidSdkDir + "/tools"
-            commandLine './android', 'list'
-            standardOutput = sdks
-        }
+/**
+ * 判断是否有jenkins环境
+ */
+boolean isInJenkinsPath() {
+    Map<String, String> map = System.getenv()
+    if (map == null) {
+        return false
+    }
+    //it's windows+
+    String str = map.get("Path")
+    if ((str != null) && str.contains("jenkins")) {
+        return true
     } else {
-        def str = androidSdkDir + File.separator + "tools"
-        def str1 = str.substring(0, 2)
-        def str2 = str.substring(2)
-        exec {
-            //     workingDir androidSdkDir + File.separator+"tools"
-
-            commandLine str1
-            commandLine 'cd', str2
-            commandLine 'android.bat', 'list'
-            standardOutput = sdks
-        }
-    }
-
-
-    sdks = sdks
-            .toString()
-            .split('\n')
-            .findAll { it ==~ /\s*API level:\s*(\d+).*/ }
-            .collect { (it =~ /\s*API level:\s*(\d+).*/)[0][1].toInteger() }
-            .sort({ a, b -> b <=> a })
-
-    sdks
-
-
-}
-
-int highestSdkAvailable(int defaultSdk) {
-    try {
-        def sdks = sdksAvailable()
-        def highestSdk = sdks[1]
-        if (highestSdk != null) {
-            println "#highest found SDK is " + highestSdk
-            highestSdk
-        } else {
-            println "#No installed SDKs found. Using default SDK " + defaultSdk
-            defaultSdk
-        }
-    } catch (any) {
-        println "#Exception while determining highest SDK. Using default SDK " +
-                defaultSdk
-        StackTraceUtils.sanitize(any).printStackTrace()
-        defaultSdk
+        return false
     }
 }
 
-def initMinshengGradleEnvironment() {
-    println "#initialize Minsheng Gradle Environment ....."
-    Properties properties = new Properties()
-    gradle.ext.api = properties.getProperty('sdk.api')
-    gradle.ext.sdkDir = properties.getProperty('sdk.dir')
-    gradle.ext.ndkDir = properties.getProperty('ndk.dir')
-    gradle.ext.localDir = properties.getProperty('local.dir')
-    //指定debugkeystore文件的位置，debug版apk签名的时候会用到
-    gradle.ext.debugKeystore = properties.getProperty('debug.keystore')
-    println "#initialize Minsheng Gradle Environment completes..." + gradle.ext.sdkDir
+/**
+ * 获取jenkins任务名
+ */
+def getJenkinsName() {
+    def var1 = System.getenv("JOB_NAME")
+    return var1
 }
 
-String androidSDKDir() {
-//    initMinshengGradleEnvironment()
-    def androidExecPath = new ByteArrayOutputStream()
-    def sdkDirProp
-    def rootDir = project.rootDir
-    def localProperties = new File(rootDir, "/local.properties")
-    if (localProperties.exists()) {
-        Properties properties = new Properties()
-        localProperties.withInputStream { instr ->
-            properties.load(instr)
-        }
-
-        sdkDirProp = properties.getProperty('sdk.dir')
-
-        return sdkDirProp
-    }
-}
-
-String[] buildToolsAvailable() {
-    println "#sdk dir: " + androidSDKDir()
-    def buildToolsDir = new File(androidSDKDir(), "build-tools")
-    buildToolsDir.list([accept: { d, f -> !f.contains("android") }] as FilenameFilter).sort { a, b -> b <=> a }
-}
-
-String latestBuildToolsAvailable(String defaultBuildTools) {
-    try {
-        def buildToolsVersions = buildToolsAvailable()
-        def latestBuildTools = buildToolsVersions[0]
-        buildToolsVersions.each { dir ->
-            if (new File(dir).isDirectory()) {
-                latestBuildTools = dir;
-                println "$dir"
-            }
-        }
-        if (latestBuildTools != null) {
-            println "#latest found build tools is " + latestBuildTools
-            latestBuildTools
-        } else {
-            println "#No installed build tools found. Using default build tools " +
-                    defaultBuildTools
-            defaultBuildTools
-        }
-    } catch (any) {
-        println "#Exception while determining latest build tools. Using default build tools " +
-                defaultBuildTools
-        StackTraceUtils.sanitize(any).printStackTrace()
-        defaultBuildTools
-    }
-}
-
-def getGitVersion = { ->
-    try {
-        def stdout = new ByteArrayOutputStream()
-        exec {
-            commandLine 'git', 'log', '-1', '--pretty=format:%h'
-            standardOutput = stdout
-        }
-        return stdout.toString()
-    } catch (ignored) {
-        return '0000000';
-    }
-}
-
-
-def getPrefixName = { ->
-    def var1 = System.getenv("PREFIX_NAME")
-    if (var1) {
-        return var1
-    }
-    return ''+project.name
-}
-
-def getBranchName = { ->
-    def var1 = System.getenv("GIT_BRANCH")
-    if (var1) {
-        var1 = var1.substring(var1.lastIndexOf("/") + 1);
-// var1.replace('/', '_');// var1.substring(0, var1.indexOf("/"))
-        return var1
-    }
-    return null
-}
-
-//获得是否 启用自定义版本
-def getPara_IS_CUSTOM_VERSION = { ->
-    def var1 = System.getenv("IS_CUSTOM_VERSION")
-    if (var1) {
-        return Boolean.parseBoolean(var1)
-    }
-    return false
-}
-
-//获得版本名称
-def getPara_VERSION_NAME = { ->
-    def var1 = System.getenv("VERSION_NAME")
-    if (var1) {
-        return var1;
-    }
-    return null
-}
-
-//获得版本编号
-def getPara_VERSION_CODE = { ->
-    def var1 = System.getenv("VERSION_CODE")
-    if (var1) {
-        return Integer.parseInt(var1)
-    }
-    return null
-}
-
-//获得版本号-Build Number
-def getPara_BUILD_NUMBER = { ->
+/**
+ * 获取Jenkins Build 号
+ */
+def getJenkinsBuildCode() {
     def var1 = System.getenv("BUILD_NUMBER")
-    if (var1) {
-        return Integer.parseInt(var1)
-    }
-    return 0
+    return var1
 }
 
-//构建类型
-def getPara_BUILD_TYPE = { ->
-    def var1 = System.getenv("BUILD_TYPE")
-    if (var1) {
-        return var1
-    }
-    return null
+/**
+ * 获取Jenkins Git分支名
+ */
+def getGitBranch() {
+    def var1 = System.getenv("GIT_BRANCH")
+    return var1
 }
 
-//服务地址
-def getPara_SERVER_URL = { ->
-    def var1 = System.getenv("SERVER_URL")
-    if (var1) {
-        return var1
-    }
-    return null
+/**
+ * 获取Git 版本号
+ */
+def getGitSHA() {
+    return 'git rev-parse --short HEAD'.execute().text.trim()
 }
 
-//用户中心地址
-def getPara_USERCENTER_URL = { ->
-    def var1 = System.getenv("USERCENTER_URL")
-    if (var1) {
-        return var1
-    }
-    return null
+/**
+ * 获取Git Tag
+ */
+def getGitTag() {
+    return 'git describe --tags'.execute([], project.rootDir).text.trim()
 }
 
-
-//行程分析详情地址
-def getPara_ANALYSIS_DETAIL_URL = { ->
-    def var1 = System.getenv("ANALYSIS_DETAIL_URL")
-    if (var1) {
-        return var1
-    }
-    return null
+/**
+ * 获取Git 提交次数
+ */
+def getGitCommitCount() {
+    return 'git rev-list --count HEAD'.execute([], project.rootDir).text.trim()
 }
-//文件上传地址
-def getPara_HOST_FILE_UPLOAD = { ->
-    def var1 = System.getenv("HOST_FILE_UPLOAD")
-    if (var1) {
-        return var1
-    }
-    return null
-}
-//H5页面的服务地址
-def getPara_HOST_HTML5 = { ->
-    def var1 = System.getenv("HOST_HTML5")
-    if (var1) {
-        return var1
-    }
-    return null
-}
-//卡友论坛的服务地址
-def getPara_HOST_DRIVER_BBS = { ->
-    def var1 = System.getenv("HOST_DRIVER_BBS")
-    if (var1) {
-        return var1
-    }
-    return null
-}
-def getPara_CHANNELS = { ->
-    def var1 = System.getenv("CHANNELS")
-    if (var1) {
-        return var1
-    }
-    return null
+/**
+ * 获取编译类型
+ * @return
+ */
+def getBuildType() {
+    def var = System.getenv("BUILD_TYPE")
+    return var
 }
 
-
-def readLocalProperty(String key) {
-    Properties properties = new Properties()
-    File localPropertyFile = project.rootProject.file('local.properties');
-    if (localPropertyFile.exists()) {
-        properties.load(localPropertyFile.newDataInputStream())
-        def var1 = properties.getProperty(key)
-//        println "#从local.properties读取到: " + var1
-        return var1;
-    }
-}
-
+/**
+ * 定义几个变量，在build.gradle里面引用
+ */
 ext {
-    GET_VERSION = getGitVersion()
-    PREFIX_NAME = getPrefixName()
-    BRANCH_NAME = getBranchName()
-
-    SERVER_URL = getPara_SERVER_URL()
-    USERCENTER_URL = getPara_USERCENTER_URL()
-    ANALYSIS_DETAIL_URL = getPara_ANALYSIS_DETAIL_URL()
-    HOST_FILE_UPLOAD = getPara_HOST_FILE_UPLOAD()
-    HOST_HTML5 = getPara_HOST_HTML5()
-    HOST_DRIVER_BBS = getPara_HOST_DRIVER_BBS()
-
-    IS_CUSTOM_VERSION = getPara_IS_CUSTOM_VERSION()
-    VERSION_NAME = getPara_VERSION_NAME()
-    VERSION_CODE = getPara_VERSION_CODE()
-    BUILD_NUMBER = getPara_BUILD_NUMBER()
-
-    BUILD_TYPE = getPara_BUILD_TYPE()
-
-    IS_JENKINS = !(BRANCH_NAME == null || "".equals(BRANCH_NAME));
-
-    CHANNELS = getPara_CHANNELS()
-
+    gitBranch = getGitBranch()
+    isJenkins = !(gitBranch == null || "".equals(gitBranch));
+    isJenkinsPath = isInJenkinsPath()
+    jenkinsRevision = getJenkinsBuildCode()
+    jenkinsName = getJenkinsName()
+    gitSHA = getGitSHA()
+    gitTag = getGitTag()
+    gitCommitCount = getGitCommitCount()
+    buildType = getBuildType()
 }
 
-//ext.compileSdkVersion = highestSdkAvailable(22)
-//ext.buildToolsVersion = latestBuildToolsAvailable("23")
-
-println "#读取环境参数,是否处于Jenkins编译环境： ${IS_JENKINS}"
-println "#读取环境参数,PREFIX_NAME is ${PREFIX_NAME}"
-println "#读取环境参数,BRANCH_NAME is ${BRANCH_NAME}"
-println '#读取环境参数,GET_VERSION is ' + project.GET_VERSION
-println '#读取环境参数,指定 业务服务器地址（仅Beta生效）：' + project.SERVER_URL
-println '#读取环境参数,指定 用户中心服务器地址（仅Beta生效）：' + project.USERCENTER_URL
-println '#读取环境参数,指定 行程分析详情服务器地址（仅Beta生效）：' + project.ANALYSIS_DETAIL_URL
-println '#读取环境参数,指定 H5服务器地址（仅Beta生效）：' + project.HOST_HTML5
-println '#读取环境参数,是否自定义版本号：' + project.IS_CUSTOM_VERSION
-println '#读取环境参数,版本号(编号)：' + project.VERSION_CODE
-println '#读取环境参数,版本号(名称)：' + project.VERSION_NAME
-println '#读取环境参数,版本号(Build Number)：' + project.BUILD_NUMBER
-println '#读取环境参数,指定构建类型 BUILD_TYPE：' + project.BUILD_TYPE
-println '#读取环境参数,CHANNELS：' + project.CHANNELS
-
+println '***************打印配置项**************'
+println "#判断是否有jenkins环境 is ${isJenkinsPath}"
+println "#判断处于jenkins打包 is ${isJenkins}"
+println "#获取jenkins任务名 is ${jenkinsName}"
+println "#获取Jenkins Build 号 is ${jenkinsRevision}"
+println "#获取Jenkins Git分支 is ${gitBranch}"
+println "#获取Git 版本号 is ${gitSHA}"
+println "#获取Git Tag is ${gitTag}"
+println "#获取Git 提交次数 is ${gitCommitCount}"
+println "#获取buildType类型 is ${buildType}"
+println '***************打印配置项**************'
